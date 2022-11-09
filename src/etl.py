@@ -8,7 +8,7 @@ from pyspark.sql import DataFrame, SparkSession
 from table_schemas import LOGS_ON_LOAD_SCHEMA, SONGS_ON_LOAD_SCHEMA
 
 config = configparser.ConfigParser()
-config.read("dl.cfg")
+config.read("_user.cfg")
 
 os.environ["AWS_ACCESS_KEY_ID"] = config["AWS_ACCESS_KEY_ID"]
 os.environ["AWS_SECRET_ACCESS_KEY"] = config["AWS_SECRET_ACCESS_KEY"]
