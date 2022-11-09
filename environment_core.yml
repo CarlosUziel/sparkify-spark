@@ -1,0 +1,21 @@
+name: sparkify_spark
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+dependencies:
+  - pyspark
+  - pandas
+  - jupyterlab
+  - ipython-sql
+  - black
+  - isort
+  - autoflake
+  - tqdm
+  - rich
+  - ipywidgets
+  - scala
+  - ca-certificates
+  - certifi
+  - openssl
+  - python=3.10
