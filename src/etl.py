@@ -35,7 +35,7 @@ def create_songs_table(songs_on_load: DataFrame, save_path: str):
 
     # 2. Write songs table to parquet files partitioned by year and artist
     partition_cols = ("year", "artist_id")
-    songs_table.repartition(cols=partition_cols).write.parquet(
+    songs_table.repartition(partition_cols).write.parquet(
         save_path, partitionBy=partition_cols, mode="overwrite"
     )
 
@@ -157,7 +157,7 @@ def create_time_table(logs_on_load: DataFrame, save_path: str):
 
     # 2. Write time table to parquet files partitioned by year and month
     partition_columns = ("year", "month")
-    time_table.repartition(cols=partition_columns).write.parquet(
+    time_table.repartition(partition_columns).write.parquet(
         save_path, partitionBy=partition_columns, mode="overwrite"
     )
 
@@ -201,9 +201,7 @@ def create_songplays_table(
     ).drop("title")
 
     # 4. Write songplays table to parquet files
-    songplays_table.write.parquet(
-        save_path, mode="overwrite"
-    )
+    songplays_table.write.parquet(save_path, mode="overwrite")
 
     logging.info("Songplays table successfully written.")
 
