@@ -137,6 +137,7 @@ dmypy.json
 *.idea
 *.bin
 *.html
+*.pyc
 .json
 .JSON
 .vscode
