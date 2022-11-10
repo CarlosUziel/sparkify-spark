@@ -1,5 +1,4 @@
 import logging
-import pdb
 import warnings
 from configparser import ConfigParser
 from pathlib import Path
@@ -35,8 +34,9 @@ def create_songs_table(songs_on_load: DataFrame, save_path: str):
     )
 
     # 2. Write songs table to parquet files partitioned by year and artist
-    songs_table.write.parquet(
-        save_path, partitionBy=("year", "artist_id"), mode="overwrite"
+    partition_cols = ("year", "artist_id")
+    songs_table.repartition(cols=partition_cols).write.parquet(
+        save_path, partitionBy=partition_cols, mode="overwrite"
     )
 
     logging.info("Songs table successfully written.")
@@ -73,7 +73,7 @@ def create_artists_table(songs_on_load: DataFrame, save_path: str):
     # 2. Write artists table to parquet files
     artists_table.write.parquet(save_path, mode="overwrite")
 
-    logging.info("Songs table successfully written.")
+    logging.info("Artists table successfully written.")
 
 
 def process_song_data(spark: SparkSession, dl_config: ConfigParser):
@@ -156,7 +156,10 @@ def create_time_table(logs_on_load: DataFrame, save_path: str):
         time_table = time_table.withColumn(time_unit, func(time_table.start_time))
 
     # 2. Write time table to parquet files partitioned by year and month
-    time_table.write.parquet(save_path, partitionBy=("year", "month"), mode="overwrite")
+    partition_columns = ("year", "month")
+    time_table.repartition(cols=partition_columns).write.parquet(
+        save_path, partitionBy=partition_columns, mode="overwrite"
+    )
 
     logging.info("Time table successfully written.")
 
@@ -197,9 +200,9 @@ def create_songplays_table(
         songs_df.select(["title", "song_id", "artist_id"]), on="title"
     ).drop("title")
 
-    # 4. Write songplays table to parquet files partitioned by year and month
+    # 4. Write songplays table to parquet files
     songplays_table.write.parquet(
-        save_path, partitionBy=("year", "month"), mode="overwrite"
+        save_path, mode="overwrite"
     )
 
     logging.info("Songplays table successfully written.")
@@ -230,8 +233,6 @@ def process_log_data(spark: SparkSession, dl_config: ConfigParser):
     bucket_prefix = f"s3a://{dl_config.get('S3', 'DEST_BUCKET_NAME')}"
     create_users_table(logs_on_load, f"{bucket_prefix}/users")
     create_time_table(logs_on_load, f"{bucket_prefix}/time")
-
-    pdb.set_trace()
 
     songs_df = spark.read.parquet(f"{bucket_prefix}/songs")
     create_songplays_table(logs_on_load, songs_df, f"{bucket_prefix}/time")

@@ -66,6 +66,7 @@ def create_s3_bucket(user_config: ConfigParser, dl_config: ConfigParser) -> bool
 
     # 2. Create bucket if it doesn't exist
     bucket_name = dl_config.get("S3", "DEST_BUCKET_NAME")
+
     try:
         s3.meta.client.head_bucket(Bucket=bucket_name)
     except ClientError as e:
