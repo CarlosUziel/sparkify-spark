@@ -1,24 +1,20 @@
-import configparser
-import os
-from typing import Iterable, Union
+import logging
+import pdb
+import warnings
+from configparser import ConfigParser
+from pathlib import Path
 
 import pyspark.sql.functions as F
 from pyspark.sql import DataFrame, SparkSession
+from rich import traceback
 
 from table_schemas import LOGS_ON_LOAD_SCHEMA, SONGS_ON_LOAD_SCHEMA
+from utils import create_s3_bucket, create_spark_session, process_config
 
-config = configparser.ConfigParser()
-config.read("_user.cfg")
-
-os.environ["AWS_ACCESS_KEY_ID"] = config["AWS_ACCESS_KEY_ID"]
-os.environ["AWS_SECRET_ACCESS_KEY"] = config["AWS_SECRET_ACCESS_KEY"]
-
-
-def create_spark_session():
-    spark = SparkSession.builder.config(
-        "spark.jars.packages", "org.apache.hadoop:hadoop-aws:2.7.0"
-    ).getOrCreate()
-    return spark
+_ = traceback.install()
+logging.basicConfig(force=True)
+logging.getLogger().setLevel(logging.INFO)
+warnings.filterwarnings("ignore")
 
 
 def create_songs_table(songs_on_load: DataFrame, save_path: str):
@@ -29,6 +25,8 @@ def create_songs_table(songs_on_load: DataFrame, save_path: str):
         songs_on_load: song data.
         save_path: path to save songs table to.
     """
+    logging.info("Creating songs table...")
+
     # 1. Extract columns to create songs table
     songs_table = (
         songs_on_load.select(["song_id", "title", "artist_id", "year", "duration"])
@@ -41,6 +39,8 @@ def create_songs_table(songs_on_load: DataFrame, save_path: str):
         save_path, partitionBy=("year", "artist_id"), mode="overwrite"
     )
 
+    logging.info("Songs table successfully written.")
+
 
 def create_artists_table(songs_on_load: DataFrame, save_path: str):
     """
@@ -50,6 +50,8 @@ def create_artists_table(songs_on_load: DataFrame, save_path: str):
         songs_on_load: song data.
         save_path: path to save artists table to.
     """
+    logging.info("Creating artists table...")
+
     # 0. Define artists column names mapping
     artists_cols_map = {
         "artist_id": "artist_id",
@@ -71,24 +73,28 @@ def create_artists_table(songs_on_load: DataFrame, save_path: str):
     # 2. Write artists table to parquet files
     artists_table.write.parquet(save_path, mode="overwrite")
 
+    logging.info("Songs table successfully written.")
 
-def process_song_data(
-    spark: SparkSession, load_path: Union[str, Iterable[str]], save_root: str
-):
+
+def process_song_data(spark: SparkSession, dl_config: ConfigParser):
     """
     Load song data from .json files and extract dimensional tables.
 
     Args:
         spark: Spark session.
-        load_path: root path of song .json files.
-        save_root: root path to store tables.
+        dl_config: data lake configuration parameters.
     """
     # 1. Load songs files
-    songs_on_load = spark.read.json(load_path, schema=SONGS_ON_LOAD_SCHEMA)
+    logging.info("Loading song data...")
+    songs_on_load = spark.read.option("recursiveFileLookup", "true").json(
+        dl_config.get("S3", "SONG_DATA") + "/A/A/*/*.json", schema=SONGS_ON_LOAD_SCHEMA
+    )
+    logging.info("Song data successfully loaded.")
 
     # 2. Extract tables from songs data
-    create_songs_table(songs_on_load, f"{save_root}/songs")
-    create_artists_table(songs_on_load, f"{save_root}/artists")
+    bucket_prefix = f"s3a://{dl_config.get('S3', 'DEST_BUCKET_NAME')}"
+    create_songs_table(songs_on_load, f"{bucket_prefix}/songs")
+    create_artists_table(songs_on_load, f"{bucket_prefix}/artists")
 
 
 def create_users_table(logs_on_load: DataFrame, save_path: str):
@@ -99,6 +105,8 @@ def create_users_table(logs_on_load: DataFrame, save_path: str):
         logs_on_load: log data.
         save_path: path to save users table to.
     """
+    logging.info("Creating users table...")
+
     # 0. Define artists column names mapping
     users_cols_map = {
         "user_id": "userId",
@@ -119,6 +127,8 @@ def create_users_table(logs_on_load: DataFrame, save_path: str):
     # 2. Write users table to parquet files
     users_table.write.parquet(save_path, mode="overwrite")
 
+    logging.info("Users table successfully written.")
+
 
 def create_time_table(logs_on_load: DataFrame, save_path: str):
     """
@@ -128,6 +138,8 @@ def create_time_table(logs_on_load: DataFrame, save_path: str):
         logs_on_load: log data.
         save_path: path to save users table to.
     """
+    logging.info("Creating time table...")
+
     # 1. Extract columns to create time table
     time_table = logs_on_load.select(F.col("timestamp").alias("start_time"))
 
@@ -146,6 +158,8 @@ def create_time_table(logs_on_load: DataFrame, save_path: str):
     # 2. Write time table to parquet files partitioned by year and month
     time_table.write.parquet(save_path, partitionBy=("year", "month"), mode="overwrite")
 
+    logging.info("Time table successfully written.")
+
 
 def create_songplays_table(
     logs_on_load: DataFrame, songs_df: DataFrame, save_path: str
@@ -157,8 +171,10 @@ def create_songplays_table(
         logs_on_load: log data.
         save_path: path to save users table to.
     """
+    logging.info("Creating songplays table...")
+
     # 1. Extract columns to create songplays table
-    songlplays_cols_map = {
+    songplays_cols_map = {
         "start_time": "timestamp",
         "user_id": "userId",
         "level": "level",
@@ -168,7 +184,7 @@ def create_songplays_table(
         "user_agent": "userAgent",
     }
     songplays_table = logs_on_load.select(
-        [F.col(c_old).alias(c_new) for c_new, c_old in songlplays_cols_map.items()]
+        [F.col(c_old).alias(c_new) for c_new, c_old in songplays_cols_map.items()]
     )
 
     # 2. Get songplay_id column
@@ -186,20 +202,21 @@ def create_songplays_table(
         save_path, partitionBy=("year", "month"), mode="overwrite"
     )
 
+    logging.info("Songplays table successfully written.")
 
-def process_log_data(
-    spark: SparkSession, load_path: Union[str, Iterable[str]], save_root: str
-):
+
+def process_log_data(spark: SparkSession, dl_config: ConfigParser):
     """
     Load log data from .json files and extract dimensional tables and one facts table.
 
     Args:
         spark: Spark session.
-        load_path: root path of song .json files.
-        save_root: root path to store tables.
+        dl_config: data lake configuration parameters.
     """
     # 1. Load songs files
-    logs_on_load = spark.read.json(load_path, schema=LOGS_ON_LOAD_SCHEMA)
+    logs_on_load = spark.read.json(
+        dl_config.get("S3", "LOG_DATA"), schema=LOGS_ON_LOAD_SCHEMA
+    )
 
     # 2. Filter by actions for song plays
     logs_on_load = logs_on_load.where(logs_on_load.page == "NextSong")
@@ -209,23 +226,33 @@ def process_log_data(
         "timestamp", F.to_timestamp(logs_on_load.ts / 1000)
     )
 
-    # 4. Create users table
-    create_users_table(logs_on_load, f"{save_root}/users")
+    # 4. Create tables
+    bucket_prefix = f"s3a://{dl_config.get('S3', 'DEST_BUCKET_NAME')}"
+    create_users_table(logs_on_load, f"{bucket_prefix}/users")
+    create_time_table(logs_on_load, f"{bucket_prefix}/time")
 
-    # 5. Create time table
-    create_time_table(logs_on_load, f"{save_root}/time")
+    pdb.set_trace()
 
-    # 6. Create songplays table
-    songs_df = spark.read.parquet(f"{save_root}/songs")
-    create_songplays_table(logs_on_load, songs_df, f"{save_root}/time")
+    songs_df = spark.read.parquet(f"{bucket_prefix}/songs")
+    create_songplays_table(logs_on_load, songs_df, f"{bucket_prefix}/time")
 
 
 def main():
-    spark = create_spark_session()
-    output_data = "s3a://..."
+    # 1. Read configuration files
+    user_config, dl_config = (
+        process_config(Path(__file__).parents[1].joinpath("_user.cfg")),
+        process_config(Path(__file__).parents[1].joinpath("dl.cfg")),
+    )
 
-    process_song_data(spark, "s3a://udacity-dend/song_data", output_data)
-    process_log_data(spark, "s3a://udacity-dend/log_data", output_data)
+    # 2. Create destination bucket if it does not exist
+    assert create_s3_bucket(user_config, dl_config), "Error creating S3 bucket."
+
+    # 3. Create spark session
+    spark = create_spark_session(user_config, dl_config)
+
+    # 4. Process data
+    process_song_data(spark, dl_config)
+    process_log_data(spark, dl_config)
 
 
 if __name__ == "__main__":
