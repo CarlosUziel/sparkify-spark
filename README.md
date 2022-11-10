@@ -156,7 +156,7 @@ mamba activate sparkify_spark
   2. Go to [AWS IAM service](https://console.aws.amazon.com/iam/home#/users) and click on the "**Add user**" button to create a new IAM user in your AWS account.
   3. Choose a name of your choice.
   4. Select "**Programmatic access**" as the access type. Click Next.
-  5. Choose the **Attach existing policies directly tab**, and select the "**AdministratorAccess**". Click Next.
+  5. Choose the **Attach existing policies directly tab**, and select the "**AdministratorAccess**" (<span style="color:red;font-weight:bold">Only for testing purposes!</span>). Click Next.
   6. Skip adding any tags. Click Next.
   7. Review and create the user. It will show you a pair of access key ID and secret.
   8. Take note of the pair of access key ID and secret. This pair is collectively known as Access key.
