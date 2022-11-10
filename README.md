@@ -16,7 +16,7 @@
       <a href="#getting-started">Getting Started</a>
       <ul>
         <li><a href="#setting-up-a-conda-environment">Setting up a conda environment</a></li>
-        <li><a href="#initializing-postgresql-database">Initializing PostgreSQL database</a></li>
+        <li><a href="#setting-up-an-amazon-emr-cluster">Setting up an Amazon EMR cluster</a></li>
       </ul>
     </li>
     <li><a href="#usage">Usage</a></li>
@@ -175,13 +175,23 @@ mamba activate sparkify_spark
 
 **Create cluster:**
 
-...
+Since the python scripts that are part of this project are meant to be run within an EMR cluster, the easiest way is to create the EMR cluster using the AWS UI. Check this [great guide](https://hands-on.cloud/working-with-emr-in-python-using-boto3/) on how to do it using boto3.
+
+Create cluster with the following settings (using advanced options):
+
+- **Release**: emr-6.8.0 or later.
+- **Applications**: Hadoop 3.2.1, JupyterHub 1.4.1, Hive 3.1.3, JupyterEnterpriseGateway 2.1.0, Hue 4.10.0, Zeppelin 0.10.1, Spark 3.3.0 and Pig 0.17.0 (or later versions).
+- **Instance type**: m3.xlarge.
+- **Number of instances**: 3.
+- **EC2 key pair**: Proceed without an EC2 key pair or feel free to use one if you'd like to.
+
+<span style="color:red;font-weight:bold">DO NOT FORGET TO TERMINATE YOUR CLUSTER WHEN FINISHED WORKING ON THE PROJECT TO AVOID UNWANTED COSTS!</span>
 
 ## Usage
 
 Project structure:
 
-- `notebooks`: contains the main Jupyter notebook to run the project either locally (`notebooks/main_local.ipynb`) or on an EMCR cluster (`notebooks/main_emr.ipynb`).
+- `notebooks`: contains the main Jupyter notebook to run the project (`notebooks/main.ipynb`).
 - `src`: contains the source files and scripts to build and populate the Data Lake.
 
 Ensure you have set the `PYTHONPATH` environment variable as needed (e.g., `PYTHONPATH=~/sparkify_spark/src`)
