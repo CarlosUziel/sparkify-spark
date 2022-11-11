@@ -166,8 +166,8 @@ mamba activate sparkify_spark
   1. Create a new file, `_user.cfg`, and add the following:
 
    ```bash
-   KEY= <YOUR_AWS_KEY>
-   SECRET= <YOUR_AWS_SECRET>
+   AWS_ACCESS_KEY_ID = <YOUR_AWS_KEY>
+   AWS_SECRET_ACCESS_KEY = <YOUR_AWS_SECRET>
    ```
 
   2. This file will be loaded internally to connect to AWS and perform various operations.
@@ -180,10 +180,12 @@ Since the python scripts that are part of this project are meant to be run withi
 Create cluster with the following settings (using advanced options):
 
 - **Release**: emr-6.8.0 or later.
-- **Applications**: Hadoop 3.2.1, JupyterHub 1.4.1, Hive 3.1.3, JupyterEnterpriseGateway 2.1.0, Hue 4.10.0, Zeppelin 0.10.1, Spark 3.3.0 and Pig 0.17.0 (or later versions).
+- **Applications**: Hadoop 3.2.1, JupyterEnterpriseGateway 2.1.0, and Spark 3.3.0 (or later versions).
 - **Instance type**: m3.xlarge.
 - **Number of instances**: 3.
 - **EC2 key pair**: Proceed without an EC2 key pair or feel free to use one if you'd like to.
+
+It is a good idea to set cluster auto-termination on (e.g. to one hour after being idle).
 
 <span style="color:red;font-weight:bold">DO NOT FORGET TO TERMINATE YOUR CLUSTER WHEN FINISHED WORKING ON THE PROJECT TO AVOID UNWANTED COSTS!</span>
 
@@ -196,12 +198,13 @@ Project structure:
 
 Ensure you have set the `PYTHONPATH` environment variable as needed (e.g., `PYTHONPATH=~/sparkify_spark/src`)
 
-...
+The whole project can be run as follows:
 
-### Example queries
+```bash
+python src/etl.py
+```
 
-...
-
+Alternatively, follow along `notebooks/main.ipynb`.
 
 <p align="right">(<a href="#top">back to top</a>)</p>
 
