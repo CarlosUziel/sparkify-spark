@@ -1,4 +1,5 @@
 import logging
+import pdb
 import warnings
 from configparser import ConfigParser
 from pathlib import Path
@@ -7,7 +8,16 @@ import pyspark.sql.functions as F
 from pyspark.sql import DataFrame, SparkSession
 from rich import traceback
 
-from table_schemas import LOGS_ON_LOAD_SCHEMA, SONGS_ON_LOAD_SCHEMA
+from table_schemas import (
+    ARTISTS_FIELDS,
+    LOGS_ON_LOAD_SCHEMA,
+    SONGPLAYS_FIELDS,
+    SONGS_FIELDS,
+    SONGS_ON_LOAD_SCHEMA,
+    SONGS_SCHEMA,
+    TIME_FIELDS,
+    USERS_FIELDS,
+)
 from utils import create_s3_bucket, create_spark_session, process_config
 
 _ = traceback.install()
@@ -35,9 +45,9 @@ def create_songs_table(songs_on_load: DataFrame, save_path: str):
 
     # 2. Write songs table to parquet files partitioned by year and artist
     partition_cols = ("year", "artist_id")
-    songs_table.repartition(partition_cols).write.parquet(
-        save_path, partitionBy=partition_cols, mode="overwrite"
-    )
+    songs_table.select(list(SONGS_FIELDS.keys())).repartition(
+        *[F.col(c) for c in partition_cols]
+    ).write.parquet(save_path, partitionBy=partition_cols, mode="overwrite")
 
     logging.info("Songs table successfully written.")
 
@@ -71,7 +81,9 @@ def create_artists_table(songs_on_load: DataFrame, save_path: str):
     )
 
     # 2. Write artists table to parquet files
-    artists_table.write.parquet(save_path, mode="overwrite")
+    artists_table.select(list(ARTISTS_FIELDS.keys())).write.parquet(
+        save_path, mode="overwrite"
+    )
 
     logging.info("Artists table successfully written.")
 
@@ -87,7 +99,7 @@ def process_song_data(spark: SparkSession, dl_config: ConfigParser):
     # 1. Load songs files
     logging.info("Loading song data...")
     songs_on_load = spark.read.option("recursiveFileLookup", "true").json(
-        dl_config.get("S3", "SONG_DATA") + "/A/A/*/*.json", schema=SONGS_ON_LOAD_SCHEMA
+        dl_config.get("S3", "SONG_DATA"), schema=SONGS_ON_LOAD_SCHEMA
     )
     logging.info("Song data successfully loaded.")
 
@@ -125,7 +137,9 @@ def create_users_table(logs_on_load: DataFrame, save_path: str):
     )
 
     # 2. Write users table to parquet files
-    users_table.write.parquet(save_path, mode="overwrite")
+    users_table.select(list(USERS_FIELDS.keys())).write.parquet(
+        save_path, mode="overwrite"
+    )
 
     logging.info("Users table successfully written.")
 
@@ -156,10 +170,10 @@ def create_time_table(logs_on_load: DataFrame, save_path: str):
         time_table = time_table.withColumn(time_unit, func(time_table.start_time))
 
     # 2. Write time table to parquet files partitioned by year and month
-    partition_columns = ("year", "month")
-    time_table.repartition(partition_columns).write.parquet(
-        save_path, partitionBy=partition_columns, mode="overwrite"
-    )
+    partition_cols = ("year", "month")
+    time_table.select(list(TIME_FIELDS.keys())).repartition(
+        *[F.col(c) for c in partition_cols]
+    ).write.parquet(save_path, partitionBy=partition_cols, mode="overwrite")
 
     logging.info("Time table successfully written.")
 
@@ -176,9 +190,16 @@ def create_songplays_table(
     """
     logging.info("Creating songplays table...")
 
-    # 1. Extract columns to create songplays table
+    # 1. Add year and month columns
+    time_funcs = {"month": F.month, "year": F.year}
+    for time_unit, func in time_funcs.items():
+        logs_on_load = logs_on_load.withColumn(time_unit, func(logs_on_load.timestamp))
+
+    # 2. Extract columns to create songplays table
     songplays_cols_map = {
         "start_time": "timestamp",
+        "month": "month",
+        "year": "year",
         "user_id": "userId",
         "level": "level",
         "title": "song",
@@ -190,18 +211,21 @@ def create_songplays_table(
         [F.col(c_old).alias(c_new) for c_new, c_old in songplays_cols_map.items()]
     )
 
-    # 2. Get songplay_id column
+    # 3. Get songplay_id column
     songplays_table = songplays_table.withColumn(
         "songplay_id", F.monotonically_increasing_id()
     )
 
-    # 3. Join with songs dataframe to obtain missing columns
+    # 4. Join with songs dataframe to obtain missing columns
     songplays_table = songplays_table.join(
         songs_df.select(["title", "song_id", "artist_id"]), on="title"
     ).drop("title")
 
-    # 4. Write songplays table to parquet files
-    songplays_table.write.parquet(save_path, mode="overwrite")
+    # 5. Write songplays table to parquet files
+    partition_cols = ("year", "month")
+    songplays_table.select(list(SONGPLAYS_FIELDS.keys())).repartition(
+        *[F.col(c) for c in partition_cols]
+    ).write.parquet(save_path, mode="overwrite")
 
     logging.info("Songplays table successfully written.")
 
@@ -215,8 +239,10 @@ def process_log_data(spark: SparkSession, dl_config: ConfigParser):
         dl_config: data lake configuration parameters.
     """
     # 1. Load songs files
-    logs_on_load = spark.read.json(
-        dl_config.get("S3", "LOG_DATA"), schema=LOGS_ON_LOAD_SCHEMA
+    logs_on_load = (
+        spark.read.option("recursiveFileLookup", "true")
+        .option("multiline", "true")
+        .json(dl_config.get("S3", "LOG_DATA"), schema=LOGS_ON_LOAD_SCHEMA)
     )
 
     # 2. Filter by actions for song plays
@@ -232,8 +258,8 @@ def process_log_data(spark: SparkSession, dl_config: ConfigParser):
     create_users_table(logs_on_load, f"{bucket_prefix}/users")
     create_time_table(logs_on_load, f"{bucket_prefix}/time")
 
-    songs_df = spark.read.parquet(f"{bucket_prefix}/songs")
-    create_songplays_table(logs_on_load, songs_df, f"{bucket_prefix}/time")
+    songs_df = spark.read.parquet(f"{bucket_prefix}/songs", schema=SONGS_SCHEMA)
+    create_songplays_table(logs_on_load, songs_df, f"{bucket_prefix}/songplays")
 
 
 def main():
